@@ -64,6 +64,18 @@ const routes = [
         name: 'Permissions',
         component: () => import('@/views/Permissions.vue'),
         meta: { title: '权限管理', permission: 'permission:read' }
+      },
+      {
+        path: '/departments',
+        name: 'Departments',
+        component: () => import('@/views/Departments.vue'),
+        meta: { title: '部门管理', permission: 'department:read' }
+      },
+      {
+        path: '/query-logs',
+        name: 'QueryLogs',
+        component: () => import('@/views/QueryLogs.vue'),
+        meta: { title: '查询历史', permission: 'query:read' }
       }
     ]
   }
@@ -81,6 +93,8 @@ router.beforeEach((to, from, next) => {
     next('/login')
   } else if ((to.path === '/login' || to.path === '/register') && authStore.isAuthenticated) {
     next('/')
+  } else if (to.meta.permission && !authStore.isSuperuser) {
+    next('/dashboard')
   } else {
     next()
   }

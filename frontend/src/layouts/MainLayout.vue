@@ -43,7 +43,16 @@
             <el-icon><Key /></el-icon>
             <span>权限管理</span>
           </el-menu-item>
+          <el-menu-item index="/departments">
+            <el-icon><OfficeBuilding /></el-icon>
+            <span>部门管理</span>
+          </el-menu-item>
         </el-sub-menu>
+        
+        <el-menu-item index="/query-logs">
+          <el-icon><Document /></el-icon>
+          <span>查询历史</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     
@@ -102,7 +111,9 @@ import {
   UserFilled,
   Key,
   ArrowDown,
-  SwitchButton
+  SwitchButton,
+  OfficeBuilding,
+  Document
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 

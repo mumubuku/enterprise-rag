@@ -246,11 +246,69 @@ export const fileAPI = {
   }
 }
 
+export const departmentAPI = {
+  getDepartments() {
+    return request({
+      url: '/departments',
+      method: 'get'
+    })
+  },
+  
+  getDepartment(id) {
+    return request({
+      url: `/departments/${id}`,
+      method: 'get'
+    })
+  },
+  
+  createDepartment(data) {
+    return request({
+      url: '/departments',
+      method: 'post',
+      data
+    })
+  },
+  
+  updateDepartment(id, data) {
+    return request({
+      url: `/departments/${id}`,
+      method: 'put',
+      data
+    })
+  },
+  
+  deleteDepartment(id) {
+    return request({
+      url: `/departments/${id}`,
+      method: 'delete'
+    })
+  }
+}
+
+export const queryLogAPI = {
+  getQueryLogs(params) {
+    return request({
+      url: '/query-logs',
+      method: 'get',
+      params
+    })
+  },
+  
+  getQueryLogStats() {
+    return request({
+      url: '/query-logs/stats',
+      method: 'get'
+    })
+  }
+}
+
 const api = {
   ...authAPI,
   ...kbAPI,
   ...ragAPI,
-  ...fileAPI
+  ...fileAPI,
+  ...departmentAPI,
+  ...queryLogAPI
 }
 
 export default api

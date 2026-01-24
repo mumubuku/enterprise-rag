@@ -38,11 +38,11 @@
     
     <el-dialog
       v-model="showCreateDialog"
-      title="创建知识库"
+      :title="editingKB ? '编辑知识库' : '创建知识库'"
       width="600px"
       @close="resetForm"
     >
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
+      <el-form :model="form" :rules="rules" ref="formRef" label-width="120px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入知识库名称" />
         </el-form-item>
@@ -68,11 +68,24 @@
             <el-option label="智谱AI" value="zhipuai" />
           </el-select>
         </el-form-item>
+        <el-divider content-position="left">高级配置</el-divider>
+        <el-form-item label="分块大小" prop="chunk_size">
+          <el-input-number v-model="form.chunk_size" :min="100" :max="5000" :step="100" />
+          <span style="margin-left: 8px; color: #999;">字符数</span>
+        </el-form-item>
+        <el-form-item label="分块重叠" prop="chunk_overlap">
+          <el-input-number v-model="form.chunk_overlap" :min="0" :max="1000" :step="50" />
+          <span style="margin-left: 8px; color: #999;">字符数</span>
+        </el-form-item>
+        <el-form-item label="检索数量" prop="retrieval_top_k">
+          <el-input-number v-model="form.retrieval_top_k" :min="1" :max="20" :step="1" />
+          <span style="margin-left: 8px; color: #999;">返回的相关文档数</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
         <el-button type="primary" @click="handleCreate" :loading="submitting">
-          创建
+          {{ editingKB ? '更新' : '创建' }}
         </el-button>
       </template>
     </el-dialog>
@@ -92,12 +105,16 @@ const kbStore = useKnowledgeBaseStore()
 const showCreateDialog = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
+const editingKB = ref(null)
 
 const form = ref({
   name: '',
   description: '',
   embedding_model: 'openai',
-  llm_model: 'openai'
+  llm_model: 'openai',
+  chunk_size: 1000,
+  chunk_overlap: 200,
+  retrieval_top_k: 4
 })
 
 const rules = {
@@ -120,7 +137,17 @@ function viewDetail(kb) {
 }
 
 function editKB(kb) {
-  ElMessage.info('编辑功能开发中')
+  editingKB.value = kb
+  form.value = {
+    name: kb.name,
+    description: kb.description,
+    embedding_model: kb.embedding_model || 'openai',
+    llm_model: kb.llm_model || 'openai',
+    chunk_size: kb.chunk_size || 1000,
+    chunk_overlap: kb.chunk_overlap || 200,
+    retrieval_top_k: kb.retrieval_top_k || 4
+  }
+  showCreateDialog.value = true
 }
 
 async function deleteKB(kb) {
@@ -145,8 +172,13 @@ async function handleCreate() {
     if (valid) {
       submitting.value = true
       try {
-        await kbStore.createKnowledgeBase(form.value)
-        ElMessage.success('创建成功')
+        if (editingKB.value) {
+          await kbStore.updateKnowledgeBase(editingKB.value.id, form.value)
+          ElMessage.success('更新成功')
+        } else {
+          await kbStore.createKnowledgeBase(form.value)
+          ElMessage.success('创建成功')
+        }
         showCreateDialog.value = false
         resetForm()
         await fetchKnowledgeBases()
@@ -158,11 +190,15 @@ async function handleCreate() {
 }
 
 function resetForm() {
+  editingKB.value = null
   form.value = {
     name: '',
     description: '',
     embedding_model: 'openai',
-    llm_model: 'openai'
+    llm_model: 'openai',
+    chunk_size: 1000,
+    chunk_overlap: 200,
+    retrieval_top_k: 4
   }
   formRef.value?.resetFields()
 }

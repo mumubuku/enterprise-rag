@@ -269,7 +269,10 @@ class UserResponse(BaseModel):
     id: str
     username: str
     email: str
+    full_name: Optional[str] = None
+    department_id: Optional[str] = None
     is_active: bool
+    is_superuser: bool
     is_admin: bool
     created_at: datetime
 
@@ -299,3 +302,48 @@ class FileUploadResponse(BaseModel):
     file_path: str
     file_url: str
     storage_type: str
+
+
+class DepartmentCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    parent_id: Optional[str] = None
+
+
+class DepartmentUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    parent_id: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class DepartmentResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str]
+    parent_id: Optional[str]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    user_count: Optional[int] = 0
+
+    class Config:
+        from_attributes = True
+
+
+class QueryLogResponse(BaseModel):
+    id: str
+    user_id: Optional[str]
+    user_name: Optional[str]
+    knowledge_base_id: Optional[str]
+    knowledge_base_name: Optional[str]
+    query: str
+    answer: Optional[str]
+    retrieval_count: Optional[int]
+    retrieval_time: Optional[float]
+    generation_time: Optional[float]
+    total_time: Optional[float]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

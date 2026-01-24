@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     db_user: str = "postgres"
     db_password: str = ""
     db_name: str = "enterprise_rag"
+    db_type: str = "postgresql"
     db_pool_size: int = 20
     db_max_overflow: int = 10
 
@@ -105,6 +106,8 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        if self.db_type == "sqlite":
+            return f"sqlite:///{self.db_name}"
         return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     @property

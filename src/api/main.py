@@ -26,7 +26,11 @@ from src.models.schemas import (
     StatsResponse,
     KnowledgeBasePermissionCreate,
     KnowledgeBasePermissionResponse,
-    FileUploadResponse
+    FileUploadResponse,
+    DepartmentCreate,
+    DepartmentUpdate,
+    DepartmentResponse,
+    QueryLogResponse
 )
 from src.utils.dependencies import (
     get_db,
@@ -484,6 +488,25 @@ async def question_answer(
             **qa_request.model_dump(exclude={"question", "knowledge_base_id", "top_k"}, exclude_unset=True)
         )
         
+        from src.models.database import QueryLog
+        
+        session = service.db_manager.get_session()
+        try:
+            query_log = QueryLog(
+                user_id=current_user.id,
+                knowledge_base_id=qa_request.knowledge_base_id,
+                query=qa_request.question,
+                answer=result["answer"],
+                retrieval_count=len(result["sources"]),
+                retrieval_time=result["retrieval_time"],
+                generation_time=result["generation_time"],
+                total_time=result["total_time"]
+            )
+            session.add(query_log)
+            session.commit()
+        finally:
+            session.close()
+        
         return QAResponse(
             question=result["question"],
             answer=result["answer"],
@@ -628,6 +651,314 @@ async def delete_file(
         return {"message": "File deleted successfully"}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/departments", response_model=DepartmentResponse)
+async def create_department(
+    department: DepartmentCreate,
+    current_user: User = Depends(require_superuser),
+    service: KnowledgeBaseService = Depends(get_kb_service)
+):
+    """创建部门"""
+    try:
+        from src.models.database import Department
+        
+        session = service.db_manager.get_session()
+        try:
+            if department.parent_id:
+                parent = session.query(Department).filter(Department.id == department.parent_id).first()
+                if not parent:
+                    raise HTTPException(status_code=404, detail="Parent department not found")
+            
+            new_department = Department(
+                name=department.name,
+                description=department.description,
+                parent_id=department.parent_id,
+                is_active=True
+            )
+            session.add(new_department)
+            session.commit()
+            session.refresh(new_department)
+            
+            return DepartmentResponse(
+                id=new_department.id,
+                name=new_department.name,
+                description=new_department.description,
+                parent_id=new_department.parent_id,
+                is_active=new_department.is_active,
+                created_at=new_department.created_at,
+                updated_at=new_department.updated_at,
+                user_count=0
+            )
+        finally:
+            session.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/departments", response_model=List[DepartmentResponse])
+async def get_departments(
+    current_user: User = Depends(get_current_user),
+    service: KnowledgeBaseService = Depends(get_kb_service)
+):
+    """获取部门列表"""
+    try:
+        from src.models.database import Department, User
+        
+        session = service.db_manager.get_session()
+        try:
+            departments = session.query(Department).filter(Department.is_active == True).all()
+            
+            result = []
+            for dept in departments:
+                user_count = session.query(User).filter(User.department_id == dept.id).count()
+                result.append(DepartmentResponse(
+                    id=dept.id,
+                    name=dept.name,
+                    description=dept.description,
+                    parent_id=dept.parent_id,
+                    is_active=dept.is_active,
+                    created_at=dept.created_at,
+                    updated_at=dept.updated_at,
+                    user_count=user_count
+                ))
+            
+            return result
+        finally:
+            session.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/departments/{dept_id}", response_model=DepartmentResponse)
+async def get_department(
+    dept_id: str,
+    current_user: User = Depends(get_current_user),
+    service: KnowledgeBaseService = Depends(get_kb_service)
+):
+    """获取部门详情"""
+    try:
+        from src.models.database import Department, User
+        
+        session = service.db_manager.get_session()
+        try:
+            dept = session.query(Department).filter(Department.id == dept_id).first()
+            if not dept:
+                raise HTTPException(status_code=404, detail="Department not found")
+            
+            user_count = session.query(User).filter(User.department_id == dept.id).count()
+            
+            return DepartmentResponse(
+                id=dept.id,
+                name=dept.name,
+                description=dept.description,
+                parent_id=dept.parent_id,
+                is_active=dept.is_active,
+                created_at=dept.created_at,
+                updated_at=dept.updated_at,
+                user_count=user_count
+            )
+        finally:
+            session.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/v1/departments/{dept_id}", response_model=DepartmentResponse)
+async def update_department(
+    dept_id: str,
+    department: DepartmentUpdate,
+    current_user: User = Depends(require_superuser),
+    service: KnowledgeBaseService = Depends(get_kb_service)
+):
+    """更新部门"""
+    try:
+        from src.models.database import Department
+        
+        session = service.db_manager.get_session()
+        try:
+            dept = session.query(Department).filter(Department.id == dept_id).first()
+            if not dept:
+                raise HTTPException(status_code=404, detail="Department not found")
+            
+            if department.parent_id:
+                parent = session.query(Department).filter(Department.id == department.parent_id).first()
+                if not parent:
+                    raise HTTPException(status_code=404, detail="Parent department not found")
+            
+            if department.name is not None:
+                dept.name = department.name
+            if department.description is not None:
+                dept.description = department.description
+            if department.parent_id is not None:
+                dept.parent_id = department.parent_id
+            if department.is_active is not None:
+                dept.is_active = department.is_active
+            
+            session.commit()
+            session.refresh(dept)
+            
+            return DepartmentResponse(
+                id=dept.id,
+                name=dept.name,
+                description=dept.description,
+                parent_id=dept.parent_id,
+                is_active=dept.is_active,
+                created_at=dept.created_at,
+                updated_at=dept.updated_at,
+                user_count=0
+            )
+        finally:
+            session.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/departments/{dept_id}")
+async def delete_department(
+    dept_id: str,
+    current_user: User = Depends(require_superuser),
+    service: KnowledgeBaseService = Depends(get_kb_service)
+):
+    """删除部门"""
+    try:
+        from src.models.database import Department, User
+        
+        session = service.db_manager.get_session()
+        try:
+            dept = session.query(Department).filter(Department.id == dept_id).first()
+            if not dept:
+                raise HTTPException(status_code=404, detail="Department not found")
+            
+            user_count = session.query(User).filter(User.department_id == dept_id).count()
+            if user_count > 0:
+                raise HTTPException(status_code=400, detail="Cannot delete department with users")
+            
+            session.delete(dept)
+            session.commit()
+            
+            return {"message": "Department deleted successfully"}
+        finally:
+            session.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/query-logs", response_model=List[QueryLogResponse])
+async def get_query_logs(
+    skip: int = 0,
+    limit: int = 100,
+    user_id: Optional[str] = None,
+    knowledge_base_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    service: KnowledgeBaseService = Depends(get_kb_service)
+):
+    """获取查询日志列表"""
+    try:
+        from src.models.database import QueryLog, KnowledgeBase
+        
+        session = service.db_manager.get_session()
+        try:
+            query = session.query(QueryLog)
+            
+            if not current_user.is_superuser:
+                query = query.filter(QueryLog.user_id == current_user.id)
+            elif user_id:
+                query = query.filter(QueryLog.user_id == user_id)
+            
+            if knowledge_base_id:
+                query = query.filter(QueryLog.knowledge_base_id == knowledge_base_id)
+            
+            query = query.order_by(QueryLog.created_at.desc())
+            query = query.offset(skip).limit(limit)
+            
+            logs = query.all()
+            
+            result = []
+            for log in logs:
+                user_name = None
+                if log.user_id:
+                    user = session.query(User).filter(User.id == log.user_id).first()
+                    if user:
+                        user_name = user.full_name or user.username
+                
+                kb_name = None
+                if log.knowledge_base_id:
+                    kb = session.query(KnowledgeBase).filter(KnowledgeBase.id == log.knowledge_base_id).first()
+                    if kb:
+                        kb_name = kb.name
+                
+                result.append(QueryLogResponse(
+                    id=log.id,
+                    user_id=log.user_id,
+                    user_name=user_name,
+                    knowledge_base_id=log.knowledge_base_id,
+                    knowledge_base_name=kb_name,
+                    query=log.query,
+                    answer=log.answer,
+                    retrieval_count=log.retrieval_count,
+                    retrieval_time=log.retrieval_time,
+                    generation_time=log.generation_time,
+                    total_time=log.total_time,
+                    created_at=log.created_at
+                ))
+            
+            return result
+        finally:
+            session.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/query-logs/stats")
+async def get_query_log_stats(
+    current_user: User = Depends(get_current_user),
+    service: KnowledgeBaseService = Depends(get_kb_service)
+):
+    """获取查询日志统计"""
+    try:
+        from src.models.database import QueryLog
+        from sqlalchemy import func
+        
+        session = service.db_manager.get_session()
+        try:
+            query = session.query(QueryLog)
+            
+            if not current_user.is_superuser:
+                query = query.filter(QueryLog.user_id == current_user.id)
+            
+            total_queries = query.count()
+            
+            avg_retrieval_time = query.with_entities(
+                func.avg(QueryLog.retrieval_time)
+            ).scalar() or 0
+            
+            avg_generation_time = query.with_entities(
+                func.avg(QueryLog.generation_time)
+            ).scalar() or 0
+            
+            avg_total_time = query.with_entities(
+                func.avg(QueryLog.total_time)
+            ).scalar() or 0
+            
+            return {
+                "total_queries": total_queries,
+                "avg_retrieval_time": float(avg_retrieval_time),
+                "avg_generation_time": float(avg_generation_time),
+                "avg_total_time": float(avg_total_time)
+            }
+        finally:
+            session.close()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
