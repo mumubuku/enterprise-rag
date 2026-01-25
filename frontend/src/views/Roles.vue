@@ -61,8 +61,8 @@ const roleForm = ref({
 const loadRoles = async () => {
   loading.value = true
   try {
-    const response = await api.get('/api/v1/roles')
-    roles.value = response.data
+    const response = await api.getRoles()
+    roles.value = response
   } catch (error) {
     ElMessage.error('加载角色列表失败')
   } finally {
@@ -88,10 +88,10 @@ const saveRole = async () => {
   saving.value = true
   try {
     if (editingRole.value) {
-      await api.put(`/api/v1/roles/${editingRole.value.id}`, roleForm.value)
+      await api.updateRole(editingRole.value.id, roleForm.value)
       ElMessage.success('角色更新成功')
     } else {
-      await api.post('/api/v1/roles', roleForm.value)
+      await api.createRole(roleForm.value)
       ElMessage.success('角色创建成功')
     }
     showCreateDialog.value = false
@@ -107,7 +107,7 @@ const saveRole = async () => {
 
 const deleteRole = async (roleId) => {
   try {
-    await api.delete(`/api/v1/roles/${roleId}`)
+    await api.deleteRole(roleId)
     ElMessage.success('角色删除成功')
     loadRoles()
   } catch (error) {

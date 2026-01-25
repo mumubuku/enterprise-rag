@@ -129,6 +129,7 @@ class DocumentProcessor:
     def process_file(
         self,
         file_path: str,
+        original_filename: Optional[str] = None,
         additional_metadata: Optional[Dict[str, Any]] = None
     ) -> List[Document]:
         documents = self.load_document(file_path)
@@ -137,6 +138,10 @@ class DocumentProcessor:
         
         all_chunks = []
         for doc in documents:
+            if original_filename:
+                if not doc.metadata:
+                    doc.metadata = {}
+                doc.metadata["file_name"] = original_filename
             chunks = self.split_document(doc, additional_metadata)
             all_chunks.extend(chunks)
         

@@ -17,11 +17,13 @@ class RAGEngine:
         vector_store: BaseVectorStore,
         llm: BaseLLM,
         embedding_service: Optional[BaseEmbeddings] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        db_manager=None
     ):
         self.vector_store = vector_store
         self.llm = llm
         self.embedding_service = embedding_service
+        self.db_manager = db_manager
         
         self.system_prompt = system_prompt or (
             "你是一个专业的企业知识库助手。请根据提供的上下文信息回答用户的问题。"
@@ -71,12 +73,21 @@ class RAGEngine:
         self,
         question: str,
         context: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
         **kwargs
     ) -> str:
         messages = [
-            SystemMessage(content=self.system_prompt),
-            HumanMessage(content=f"上下文信息：\n{context}\n\n问题：{question}")
+            SystemMessage(content=self.system_prompt)
         ]
+        
+        if conversation_history:
+            for msg in conversation_history[-6:]:
+                if msg["role"] == "user":
+                    messages.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    messages.append(SystemMessage(content=msg["content"]))
+        
+        messages.append(HumanMessage(content=f"上下文信息：\n{context}\n\n问题：{question}"))
         
         return self.llm.generate(messages, **kwargs)
 
@@ -86,6 +97,7 @@ class RAGEngine:
         top_k: int = 4,
         score_threshold: float = 0.0,
         filters: Optional[Dict[str, Any]] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
         **llm_kwargs
     ) -> Dict[str, Any]:
         start_time = time.time()
@@ -110,17 +122,29 @@ class RAGEngine:
         context = self.format_context(documents)
         
         gen_start_time = time.time()
-        answer = self.generate_answer(question, context, **llm_kwargs)
+        answer = self.generate_answer(question, context, conversation_history, **llm_kwargs)
         generation_time = time.time() - gen_start_time
         
-        sources = [
-            {
+        sources = []
+        for doc, score in documents:
+            metadata = dict(doc.metadata)
+            
+            if self.db_manager:
+                try:
+                    session = self.db_manager.get_session()
+                    from src.models.database import Document as DBDocument
+                    db_doc = session.query(DBDocument).filter(DBDocument.file_path == metadata.get("source", "")).first()
+                    if db_doc:
+                        metadata["file_name"] = db_doc.file_name
+                    session.close()
+                except Exception as e:
+                    pass
+            
+            sources.append({
                 "content": doc.page_content,
                 "score": score,
-                "metadata": doc.metadata
-            }
-            for doc, score in documents
-        ]
+                "metadata": metadata
+            })
         
         return {
             "question": question,
@@ -137,6 +161,7 @@ class RAGEngine:
         top_k: int = 4,
         score_threshold: float = 0.0,
         filters: Optional[Dict[str, Any]] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
         **llm_kwargs
     ) -> Iterator[Dict[str, Any]]:
         start_time = time.time()
@@ -172,9 +197,17 @@ class RAGEngine:
         ]
         
         messages = [
-            SystemMessage(content=self.system_prompt),
-            HumanMessage(content=f"上下文信息：\n{context}\n\n问题：{question}")
+            SystemMessage(content=self.system_prompt)
         ]
+        
+        if conversation_history:
+            for msg in conversation_history[-6:]:
+                if msg["role"] == "user":
+                    messages.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    messages.append(SystemMessage(content=msg["content"]))
+        
+        messages.append(HumanMessage(content=f"上下文信息：\n{context}\n\n问题：{question}"))
         
         gen_start_time = time.time()
         full_answer = ""
@@ -256,9 +289,10 @@ class HybridRAGEngine(RAGEngine):
         embedding_service: Optional[BaseEmbeddings] = None,
         system_prompt: Optional[str] = None,
         use_rerank: bool = False,
-        rerank_model: Optional[str] = None
+        rerank_model: Optional[str] = None,
+        db_manager=None
     ):
-        super().__init__(vector_store, llm, embedding_service, system_prompt)
+        super().__init__(vector_store, llm, embedding_service, system_prompt, db_manager)
         self.use_rerank = use_rerank
         self.rerank_model = rerank_model or settings.rerank_model
 

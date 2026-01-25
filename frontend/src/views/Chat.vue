@@ -41,31 +41,22 @@
               <el-icon v-else :size="24"><Service /></el-icon>
             </div>
             <div class="message-content">
-              <div class="message-text">{{ message.content }}</div>
+              <div v-if="message.role === 'user'" class="message-text">{{ message.content }}</div>
+              <MarkdownRenderer v-else :content="message.content" />
               <div v-if="message.sources && message.sources.length > 0" class="message-sources">
                 <div class="sources-title">参考来源：</div>
                 <div
-                  v-for="(source, idx) in message.sources"
+                  v-for="(source, idx) in mergeSources(message.sources)"
                   :key="idx"
                   class="source-item"
                 >
                   <el-icon><Document /></el-icon>
-                  <span>{{ source.metadata?.file_name || '未知文档' }}</span>
-                  <span class="source-score">相似度: {{ (source.score * 100).toFixed(1) }}%</span>
+                  <span>{{ source.fileName }}</span>
+                  <span v-if="source.pages.length > 0" class="source-pages">
+                    第{{ formatPages(source.pages) }}页
+                  </span>
+                  <span class="source-score">相似度: {{ (source.maxScore * 100).toFixed(1) }}%</span>
                 </div>
-              </div>
-            </div>
-          </div>
-          
-          <div v-if="loading" class="message assistant">
-            <div class="message-avatar">
-              <el-icon :size="24"><Service /></el-icon>
-            </div>
-            <div class="message-content">
-              <div class="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
               </div>
             </div>
           </div>
@@ -76,9 +67,9 @@
             v-model="inputMessage"
             type="textarea"
             :rows="3"
-            placeholder="输入您的问题..."
+            placeholder="输入您的问题... (Enter发送，Shift+Enter换行)"
             :disabled="!selectedKB || loading"
-            @keydown.ctrl.enter="sendMessage"
+            @keydown.enter.prevent="handleEnterKey"
           />
           <el-button
             type="primary"
@@ -95,11 +86,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, computed, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { FolderOpened, User, Service, Document, Promotion, ChatDotRound } from '@element-plus/icons-vue'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { ragAPI } from '@/api'
+import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 
 const kbStore = useKnowledgeBaseStore()
 
@@ -129,7 +121,36 @@ async function fetchKnowledgeBases() {
 
 function selectKB(kb) {
   selectedKB.value = kb
-  messages.value = []
+  loadChatHistory(kb.id)
+}
+
+async function loadChatHistory(kbId) {
+  try {
+    const history = await ragAPI.getChatHistory(kbId, 7)
+    messages.value = []
+    
+    const reversedHistory = [...history].reverse()
+    
+    for (const log of reversedHistory) {
+      messages.value.push({
+        role: 'user',
+        content: log.query
+      })
+      if (log.answer) {
+        messages.value.push({
+          role: 'assistant',
+          content: log.answer,
+          sources: log.sources || []
+        })
+      }
+    }
+    
+    await nextTick()
+    await scrollToBottom()
+  } catch (error) {
+    console.error('Failed to load chat history:', error)
+    messages.value = []
+  }
 }
 
 async function sendMessage() {
@@ -147,16 +168,43 @@ async function sendMessage() {
   await scrollToBottom()
   
   try {
-    const response = await ragAPI.questionAnswer({
-      question: userMessage,
-      knowledge_base_id: selectedKB.value.id,
-      top_k: 4
+    const conversationHistory = messages.value.slice(-6).map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }))
+    
+    const assistantMessage = reactive({
+      role: 'assistant',
+      content: '',
+      sources: []
     })
     
-    messages.value.push({
-      role: 'assistant',
-      content: response.answer,
-      sources: response.sources
+    messages.value.push(assistantMessage)
+    
+    await scrollToBottom()
+    
+    ragAPI.questionAnswerStream({
+      question: userMessage,
+      knowledge_base_id: selectedKB.value.id,
+      top_k: 4,
+      conversation_history: conversationHistory
+    }, (chunk) => {
+      console.log('Received chunk in Chat:', chunk)
+      if (chunk.answer) {
+        assistantMessage.content = chunk.answer
+      }
+      if (chunk.sources) {
+        console.log('Updating sources:', chunk.sources)
+        assistantMessage.sources = chunk.sources
+      }
+      scrollToBottom()
+    }, () => {
+      console.log('Stream completed in Chat')
+      loading.value = false
+    }, (error) => {
+      console.error('Stream error in Chat:', error)
+      assistantMessage.content = '抱歉，回答问题时出现错误，请稍后重试。'
+      loading.value = false
     })
   } catch (error) {
     console.error('Failed to get answer:', error)
@@ -164,7 +212,6 @@ async function sendMessage() {
       role: 'assistant',
       content: '抱歉，回答问题时出现错误，请稍后重试。'
     })
-  } finally {
     loading.value = false
     await scrollToBottom()
   }
@@ -175,6 +222,76 @@ async function scrollToBottom() {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
+}
+
+function handleEnterKey(event) {
+  if (event.shiftKey) {
+    return
+  }
+  sendMessage()
+}
+
+function formatPages(pages) {
+  if (pages.length === 0) return ''
+  if (pages.length === 1) return pages[0]
+  
+  const sorted = [...pages].sort((a, b) => a - b)
+  const ranges = []
+  let start = sorted[0]
+  let end = sorted[0]
+  
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === end + 1) {
+      end = sorted[i]
+    } else {
+      ranges.push(start === end ? `${start}` : `${start}-${end}`)
+      start = sorted[i]
+      end = sorted[i]
+    }
+  }
+  ranges.push(start === end ? `${start}` : `${start}-${end}`)
+  
+  return ranges.join('、')
+}
+
+function mergeSources(sources) {
+  console.log('mergeSources called with:', sources)
+  if (!sources || sources.length === 0) return []
+  
+  const merged = {}
+  
+  sources.forEach(source => {
+    const fileName = source.metadata?.file_name || '未知文档'
+    console.log('Processing source:', source, 'fileName:', fileName)
+    const page = source.metadata?.page
+    const chunkIndex = source.metadata?.chunk_index
+    
+    if (!merged[fileName]) {
+      merged[fileName] = {
+        fileName,
+        pages: new Set(),
+        scores: [],
+        maxScore: 0
+      }
+    }
+    
+    if (page !== undefined) {
+      merged[fileName].pages.add(page + 1)
+    }
+    
+    merged[fileName].scores.push(source.score)
+    merged[fileName].maxScore = Math.max(merged[fileName].maxScore, source.score)
+  })
+  
+  const result = Object.values(merged).map(item => ({
+    fileName: item.fileName,
+    pages: Array.from(item.pages).sort((a, b) => a - b),
+    maxScore: item.maxScore,
+    avgScore: item.scores.reduce((sum, score) => sum + score, 0) / item.scores.length
+  }))
+  
+  console.log('mergeSources result:', result)
+  return result
 }
 </script>
 
@@ -324,6 +441,16 @@ async function scrollToBottom() {
   color: white;
 }
 
+.message.assistant :deep(.markdown-content) {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1a1a1a;
+  line-height: 1.6;
+  word-wrap: break-word;
+  border: 1px solid #e8e8e8;
+}
+
 .message-sources {
   margin-top: 12px;
   padding: 12px;
@@ -346,6 +473,15 @@ async function scrollToBottom() {
   font-size: 12px;
   color: #666;
   margin-bottom: 4px;
+}
+
+.source-pages {
+  background: #e8f4ff;
+  color: #667eea;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .source-score {

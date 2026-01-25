@@ -388,6 +388,23 @@ async def delete_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/v1/documents/{doc_id}/content")
+async def get_document_content(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    service: KnowledgeBaseService = Depends(get_kb_service)
+):
+    try:
+        content = service.get_document_content(doc_id)
+        if content is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return {"content": content}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/v1/knowledge-bases/{kb_id}/permissions", response_model=KnowledgeBasePermissionResponse)
 async def grant_knowledge_base_permission(
     kb_id: str,
@@ -485,7 +502,8 @@ async def question_answer(
         result = rag_engine.query(
             question=qa_request.question,
             top_k=qa_request.top_k,
-            **qa_request.model_dump(exclude={"question", "knowledge_base_id", "top_k"}, exclude_unset=True)
+            conversation_history=qa_request.conversation_history,
+            **qa_request.model_dump(exclude={"question", "knowledge_base_id", "top_k", "conversation_history"}, exclude_unset=True)
         )
         
         from src.models.database import QueryLog
@@ -500,7 +518,8 @@ async def question_answer(
                 retrieval_count=len(result["sources"]),
                 retrieval_time=result["retrieval_time"],
                 generation_time=result["generation_time"],
-                total_time=result["total_time"]
+                total_time=result["total_time"],
+                log_metadata={"sources": result["sources"]}
             )
             session.add(query_log)
             session.commit()
@@ -543,7 +562,8 @@ async def question_answer_stream(
             for chunk in rag_engine.stream_query(
                 question=qa_request.question,
                 top_k=qa_request.top_k,
-                **qa_request.model_dump(exclude={"question", "knowledge_base_id", "top_k"}, exclude_unset=True)
+                conversation_history=qa_request.conversation_history,
+                **qa_request.model_dump(exclude={"question", "knowledge_base_id", "top_k", "conversation_history"}, exclude_unset=True)
             ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         
@@ -557,7 +577,7 @@ async def question_answer_stream(
 
 @app.get("/api/v1/stats", response_model=StatsResponse)
 async def get_stats(
-    current_user: User = Depends(require_superuser),
+    current_user: User = Depends(get_current_user),
     service: KnowledgeBaseService = Depends(get_kb_service)
 ):
     try:
@@ -860,12 +880,14 @@ async def get_query_logs(
     limit: int = 100,
     user_id: Optional[str] = None,
     knowledge_base_id: Optional[str] = None,
+    days: Optional[int] = None,
     current_user: User = Depends(get_current_user),
     service: KnowledgeBaseService = Depends(get_kb_service)
 ):
     """获取查询日志列表"""
     try:
         from src.models.database import QueryLog, KnowledgeBase
+        from datetime import datetime, timedelta
         
         session = service.db_manager.get_session()
         try:
@@ -878,6 +900,10 @@ async def get_query_logs(
             
             if knowledge_base_id:
                 query = query.filter(QueryLog.knowledge_base_id == knowledge_base_id)
+            
+            if days:
+                cutoff_date = datetime.utcnow() - timedelta(days=days)
+                query = query.filter(QueryLog.created_at >= cutoff_date)
             
             query = query.order_by(QueryLog.created_at.desc())
             query = query.offset(skip).limit(limit)
@@ -910,6 +936,7 @@ async def get_query_logs(
                     retrieval_time=log.retrieval_time,
                     generation_time=log.generation_time,
                     total_time=log.total_time,
+                    sources=log.log_metadata.get("sources") if log.log_metadata else None,
                     created_at=log.created_at
                 ))
             

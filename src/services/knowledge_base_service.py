@@ -17,7 +17,13 @@ settings = get_settings()
 class DatabaseManager:
     def __init__(self, database_url: Optional[str] = None):
         self.database_url = database_url or settings.database_url
-        self.engine = create_engine(self.database_url, pool_size=settings.db_pool_size, max_overflow=settings.db_max_overflow)
+        self.engine = create_engine(
+            self.database_url,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_pre_ping=True,
+            pool_recycle=3600
+        )
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
 
     def create_tables(self):
@@ -136,7 +142,7 @@ class KnowledgeBaseService:
                 chunk_overlap=kb.chunk_overlap
             )
 
-            chunks = processor.process_file(file_path, additional_metadata)
+            chunks = processor.process_file(file_path, original_filename, additional_metadata)
             if not chunks:
                 raise ValueError(f"Failed to process document: No chunks generated from file {file_path}")
 
@@ -294,6 +300,22 @@ class KnowledgeBaseService:
         finally:
             session.close()
 
+    def get_document_content(self, doc_id: str) -> Optional[str]:
+        session = self.db_manager.get_session()
+        try:
+            doc = session.query(Document).filter(Document.id == doc_id).first()
+            if not doc:
+                return None
+            
+            chunks = session.query(DocumentChunk).filter(DocumentChunk.document_id == doc_id).order_by(DocumentChunk.chunk_index).all()
+            if not chunks:
+                return None
+            
+            content = "\n\n".join([chunk.content for chunk in chunks])
+            return content
+        finally:
+            session.close()
+
     def get_rag_engine(self, kb_id: str) -> RAGEngine:
         if kb_id not in self._rag_engines:
             kb = self.get_knowledge_base(kb_id)
@@ -316,13 +338,15 @@ class KnowledgeBaseService:
                     vector_store=vector_store,
                     llm=llm,
                     embedding_service=embedding_service,
-                    use_rerank=True
+                    use_rerank=True,
+                    db_manager=self.db_manager
                 )
             else:
                 self._rag_engines[kb_id] = RAGEngine(
                     vector_store=vector_store,
                     llm=llm,
-                    embedding_service=embedding_service
+                    embedding_service=embedding_service,
+                    db_manager=self.db_manager
                 )
 
         return self._rag_engines[kb_id]

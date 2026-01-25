@@ -182,7 +182,7 @@ const pagination = ref({
 const loadStats = async () => {
   try {
     const response = await queryLogAPI.getQueryLogStats()
-    stats.value = response.data
+    stats.value = response
   } catch (error) {
     ElMessage.error('加载统计数据失败')
   }
@@ -191,7 +191,7 @@ const loadStats = async () => {
 const loadKnowledgeBases = async () => {
   try {
     const response = await kbAPI.getKnowledgeBases()
-    knowledgeBases.value = response.data
+    knowledgeBases.value = response
   } catch (error) {
     ElMessage.error('加载知识库列表失败')
   }
@@ -206,8 +206,8 @@ const loadQueryLogs = async () => {
       ...filters.value
     }
     const response = await queryLogAPI.getQueryLogs(params)
-    queryLogs.value = response.data
-    pagination.value.total = response.data.length
+    queryLogs.value = response
+    pagination.value.total = response.length
   } catch (error) {
     ElMessage.error('加载查询日志失败')
   } finally {

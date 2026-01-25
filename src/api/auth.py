@@ -166,7 +166,17 @@ async def create_user(
     db.commit()
     db.refresh(new_user)
     
-    return new_user
+    return UserResponse(
+        id=new_user.id,
+        username=new_user.username,
+        email=new_user.email,
+        full_name=new_user.full_name,
+        department_id=new_user.department_id,
+        is_active=new_user.is_active,
+        is_superuser=new_user.is_superuser,
+        is_admin=new_user.is_superuser,
+        created_at=new_user.created_at
+    )
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)
@@ -178,7 +188,17 @@ async def get_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        full_name=user.full_name,
+        department_id=user.department_id,
+        is_active=user.is_active,
+        is_superuser=user.is_superuser,
+        is_admin=user.is_superuser,
+        created_at=user.created_at
+    )
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
@@ -198,7 +218,17 @@ async def update_user(
     db.commit()
     db.refresh(user)
     
-    return user
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        full_name=user.full_name,
+        department_id=user.department_id,
+        is_active=user.is_active,
+        is_superuser=user.is_superuser,
+        is_admin=user.is_superuser,
+        created_at=user.created_at
+    )
 
 
 @router.delete("/users/{user_id}")
@@ -365,4 +395,17 @@ async def list_departments(
     db: Session = Depends(get_db)
 ):
     departments = db.query(Department).all()
-    return departments
+    result = []
+    for dept in departments:
+        user_count = db.query(User).filter(User.department_id == dept.id).count()
+        result.append(DepartmentResponse(
+            id=dept.id,
+            name=dept.name,
+            description=dept.description,
+            parent_id=dept.parent_id,
+            is_active=dept.is_active,
+            created_at=dept.created_at,
+            updated_at=dept.updated_at,
+            user_count=user_count
+        ))
+    return result

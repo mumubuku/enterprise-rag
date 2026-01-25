@@ -111,12 +111,21 @@ class AlibabaLLM(BaseLLM):
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             stream=True,
+            result_format='message',
             **kwargs
         )
         
+        previous_content = ""
         for response in responses:
             if response.status_code == 200 and response.output.choices:
-                yield response.output.choices[0].message.content
+                choice = response.output.choices[0]
+                if hasattr(choice, 'message') and hasattr(choice.message, 'content'):
+                    current_content = choice.message.content
+                    if current_content and current_content != previous_content:
+                        delta = current_content[len(previous_content):]
+                        if delta:
+                            yield delta
+                            previous_content = current_content
 
 
 class ZhipuLLM(BaseLLM):

@@ -70,8 +70,8 @@ const grantForm = ref({
 const loadPermissions = async () => {
   loading.value = true
   try {
-    const response = await api.get('/api/v1/permissions')
-    permissions.value = response.data
+    const response = await api.getPermissions()
+    permissions.value = response
   } catch (error) {
     ElMessage.error('加载权限列表失败')
   } finally {
@@ -87,7 +87,7 @@ const grantPermission = async () => {
 
   granting.value = true
   try {
-    await api.post('/api/v1/permissions', grantForm.value)
+    await api.createPermission(grantForm.value)
     ElMessage.success('权限授予成功')
     showGrantDialog.value = false
     grantForm.value = { username: '', permission_type: 'read' }
@@ -101,7 +101,7 @@ const grantPermission = async () => {
 
 const revokePermission = async (permission) => {
   try {
-    await api.delete(`/api/v1/permissions/${permission.user_id}/${permission.permission_type}`)
+    await api.deletePermission(permission.user_id, permission.permission_type)
     ElMessage.success('权限撤销成功')
     loadPermissions()
   } catch (error) {

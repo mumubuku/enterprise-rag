@@ -111,8 +111,10 @@ const loadDepartments = async () => {
   loading.value = true
   try {
     const response = await departmentAPI.getDepartments()
-    departments.value = buildTree(response.data)
+    console.log('部门数据:', response)
+    departments.value = buildTree(response)
   } catch (error) {
+    console.error('加载部门失败:', error)
     ElMessage.error('加载部门列表失败')
   } finally {
     loading.value = false

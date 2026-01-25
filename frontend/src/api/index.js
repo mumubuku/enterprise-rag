@@ -173,6 +173,13 @@ export const kbAPI = {
     })
   },
   
+  getDocumentContent(docId) {
+    return request({
+      url: `/documents/${docId}/content`,
+      method: 'get'
+    })
+  },
+  
   grantPermission(kbId, data) {
     return request({
       url: `/knowledge-bases/${kbId}/permissions`,
@@ -206,10 +213,83 @@ export const ragAPI = {
     })
   },
   
+  questionAnswerStream(data, onChunk, onComplete, onError) {
+    const token = localStorage.getItem('token')
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api/v1'
+    
+    console.log('Starting stream request to:', `${baseUrl}/qa/stream`)
+    console.log('Request data:', data)
+    
+    return fetch(`${baseUrl}/qa/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    }).then(response => {
+      console.log('Stream response status:', response.status)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      
+      function read() {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            console.log('Stream completed')
+            if (onComplete) onComplete()
+            return
+          }
+          
+          const chunk = decoder.decode(value, { stream: true })
+          console.log('Raw chunk:', chunk)
+          
+          const lines = chunk.split('\n')
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6))
+                console.log('Parsed chunk data:', data)
+                if (onChunk) onChunk(data)
+              } catch (e) {
+                console.error('Failed to parse chunk:', e, 'Line:', line)
+              }
+            }
+          }
+          
+          read()
+        }).catch(error => {
+          console.error('Stream read error:', error)
+          if (onError) onError(error)
+        })
+      }
+      
+      read()
+    }).catch(error => {
+      console.error('Stream request error:', error)
+      if (onError) onError(error)
+    })
+  },
+  
   getStats() {
     return request({
       url: '/stats',
       method: 'get'
+    })
+  },
+  
+  getChatHistory(kbId, days = 7) {
+    return request({
+      url: '/query-logs',
+      method: 'get',
+      params: {
+        knowledge_base_id: kbId,
+        days: days
+      }
     })
   }
 }

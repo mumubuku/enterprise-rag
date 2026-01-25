@@ -23,7 +23,7 @@ class VectorDBType(str, Enum):
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=100)
     email: str = Field(..., min_length=1, max_length=255)
-    password: str = Field(..., min_length=8)
+    password: str = Field(...)
     full_name: Optional[str] = None
     department_id: Optional[str] = None
 
@@ -57,10 +57,10 @@ class UserResponse(BaseModel):
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=100)
     email: str = Field(..., min_length=1, max_length=255)
-    password: str = Field(..., min_length=8)
+    password: str = Field(...)
     full_name: Optional[str] = None
     department_id: Optional[str] = None
-    is_superuser: bool = False
+    is_superuser: Optional[bool] = False
 
 
 class UserUpdate(BaseModel):
@@ -110,18 +110,6 @@ class DepartmentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     parent_id: Optional[str] = None
-
-
-class DepartmentResponse(BaseModel):
-    id: str
-    name: str
-    description: Optional[str]
-    parent_id: Optional[str]
-    is_active: bool
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class KnowledgeBasePermissionCreate(BaseModel):
@@ -246,6 +234,7 @@ class QARequest(BaseModel):
     temperature: Optional[float] = Field(default=0.1, ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(default=2048, ge=1, le=8192)
     use_rerank: Optional[bool] = False
+    conversation_history: Optional[List[Dict[str, str]]] = None
 
 
 class QAResponse(BaseModel):
@@ -257,12 +246,6 @@ class QAResponse(BaseModel):
     total_time: float
     llm_provider: str
     llm_model: str
-
-
-class UserCreate(BaseModel):
-    username: str = Field(..., min_length=3, max_length=100)
-    email: str = Field(..., min_length=1, max_length=255)
-    password: str = Field(..., min_length=8)
 
 
 class UserResponse(BaseModel):
@@ -343,6 +326,7 @@ class QueryLogResponse(BaseModel):
     retrieval_time: Optional[float]
     generation_time: Optional[float]
     total_time: Optional[float]
+    sources: Optional[List[Dict[str, Any]]] = None
     created_at: datetime
 
     class Config:

@@ -95,8 +95,8 @@ const userForm = ref({
 const loadUsers = async () => {
   loading.value = true
   try {
-    const response = await api.get('/api/v1/users')
-    users.value = response.data
+    const response = await api.getUsers()
+    users.value = response
   } catch (error) {
     ElMessage.error('加载用户列表失败')
   } finally {
@@ -130,10 +130,10 @@ const saveUser = async () => {
   saving.value = true
   try {
     if (editingUser.value) {
-      await api.put(`/api/v1/users/${editingUser.value.id}`, userForm.value)
+      await api.updateUser(editingUser.value.id, userForm.value)
       ElMessage.success('用户更新成功')
     } else {
-      await api.post('/api/v1/users', userForm.value)
+      await api.createUser(userForm.value)
       ElMessage.success('用户创建成功')
     }
     showCreateDialog.value = false
@@ -155,7 +155,7 @@ const saveUser = async () => {
 
 const toggleUserStatus = async (user) => {
   try {
-    await api.put(`/api/v1/users/${user.id}`, {
+    await api.updateUser(user.id, {
       is_active: !user.is_active
     })
     ElMessage.success('用户状态更新成功')
@@ -167,7 +167,7 @@ const toggleUserStatus = async (user) => {
 
 const deleteUser = async (userId) => {
   try {
-    await api.delete(`/api/v1/users/${userId}`)
+    await api.deleteUser(userId)
     ElMessage.success('用户删除成功')
     loadUsers()
   } catch (error) {

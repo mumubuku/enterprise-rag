@@ -4,7 +4,7 @@ import { authAPI } from '@/api'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
-  const user = ref(null)
+  const user = ref(JSON.parse(localStorage.getItem('user') || 'null'))
   
   const isAuthenticated = computed(() => !!token.value)
   const isSuperuser = computed(() => user.value?.is_superuser || false)
@@ -16,6 +16,7 @@ export const useAuthStore = defineStore('auth', () => {
   
   function setUser(newUser) {
     user.value = newUser
+    localStorage.setItem('user', JSON.stringify(newUser))
   }
   
   async function login(credentials) {
@@ -43,6 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     user.value = null
     localStorage.removeItem('token')
+    localStorage.removeItem('user')
   }
   
   return {

@@ -113,8 +113,7 @@ const registerRules = {
     { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 8, message: '密码长度不能少于 8 个字符', trigger: 'blur' }
+    { required: true, message: '请输入密码', trigger: 'blur' }
   ],
   confirmPassword: [
     { required: true, message: '请确认密码', trigger: 'blur' },
