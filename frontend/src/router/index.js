@@ -76,6 +76,13 @@ const routes = [
         name: 'QueryLogs',
         component: () => import('@/views/QueryLogs.vue'),
         meta: { title: '查询历史', permission: 'query:read' }
+      },
+
+      {
+        path: '/profile',
+        name: 'Profile',
+        component: () => import('@/views/Profile.vue'),
+        meta: { title: '个人中心' }
       }
     ]
   }

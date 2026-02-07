@@ -2,6 +2,10 @@
   <div class="knowledge-base-detail">
     <el-page-header @back="goBack" :content="knowledgeBaseName">
       <template #extra>
+        <el-button @click="showBatchUploadDialog = true">
+          <el-icon><FolderAdd /></el-icon>
+          批量上传
+        </el-button>
         <el-button type="primary" @click="showUploadDialog = true">
           <el-icon><Upload /></el-icon>
           上传文档
@@ -43,7 +47,13 @@
       <el-col :span="8">
         <el-card>
           <template #header>
-            <span>知识库信息</span>
+            <div class="card-header">
+              <span>知识库信息</span>
+              <el-button type="primary" size="small" @click="showEditDialog = true">
+                <el-icon><Edit /></el-icon>
+                编辑配置
+              </el-button>
+            </div>
           </template>
           <el-descriptions :column="1" border>
             <el-descriptions-item label="名称">
@@ -54,6 +64,21 @@
             </el-descriptions-item>
             <el-descriptions-item label="文档数">
               {{ documents.length }}
+            </el-descriptions-item>
+            <el-descriptions-item label="分块大小">
+              {{ config.chunk_size }}
+            </el-descriptions-item>
+            <el-descriptions-item label="分块重叠">
+              {{ config.chunk_overlap }}
+            </el-descriptions-item>
+            <el-descriptions-item label="检索数量">
+              {{ config.retrieval_top_k }}
+            </el-descriptions-item>
+            <el-descriptions-item label="嵌入模型">
+              {{ config.embedding_model || '默认' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="LLM模型">
+              {{ config.llm_model || '默认' }}
             </el-descriptions-item>
           </el-descriptions>
         </el-card>
@@ -80,6 +105,48 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="showBatchUploadDialog" title="批量上传文档" width="700px">
+      <el-upload
+        drag
+        :auto-upload="false"
+        :on-change="handleBatchFileChange"
+        :on-remove="handleFileRemove"
+        :file-list="batchFileList"
+        multiple
+      >
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">
+          拖拽多个文件到此处或 <em>点击选择</em>
+        </div>
+        <template #tip>
+          <div class="el-upload__tip">
+            支持批量上传多个文档，系统将依次处理每个文件
+          </div>
+        </template>
+      </el-upload>
+      <div v-if="batchUploadProgress.length > 0" class="batch-progress">
+        <div class="progress-header">
+          <span>上传进度</span>
+          <span>{{ batchUploadProgress.filter(p => p.status === 'success').length }}/{{ batchUploadProgress.length }}</span>
+        </div>
+        <div v-for="item in batchUploadProgress" :key="item.name" class="progress-item">
+          <div class="progress-info">
+            <span class="file-name">{{ item.name }}</span>
+            <el-tag :type="item.status === 'success' ? 'success' : item.status === 'error' ? 'danger' : 'info'" size="small">
+              {{ item.status === 'success' ? '成功' : item.status === 'error' ? '失败' : '处理中' }}
+            </el-tag>
+          </div>
+          <el-progress v-if="item.status === 'uploading'" :percentage="item.percentage" :stroke-width="6" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="cancelBatchUpload">取消</el-button>
+        <el-button type="primary" @click="startBatchUpload" :loading="batchUploading" :disabled="batchFileList.length === 0">
+          开始上传 ({{ batchFileList.length }})
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="showPreviewDialog" title="文档预览" width="80%" top="5vh">
       <div v-if="previewLoading" class="preview-loading">
         <el-icon class="is-loading" :size="40"><Loading /></el-icon>
@@ -102,6 +169,52 @@
         <el-button @click="showPreviewDialog = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showEditDialog" title="编辑知识库配置" width="600px">
+      <el-form :model="editForm" label-width="120px">
+        <el-form-item label="知识库名称">
+          <el-input v-model="editForm.name" placeholder="请输入知识库名称" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="editForm.description" type="textarea" :rows="3" placeholder="请输入描述" />
+        </el-form-item>
+        <el-form-item label="分块大小">
+          <el-input-number v-model="editForm.chunk_size" :min="100" :max="4000" :step="100" />
+          <span class="form-tip">文档分块的大小（字符数）</span>
+        </el-form-item>
+        <el-form-item label="分块重叠">
+          <el-input-number v-model="editForm.chunk_overlap" :min="0" :max="1000" :step="50" />
+          <span class="form-tip">相邻分块之间的重叠字符数</span>
+        </el-form-item>
+        <el-form-item label="检索数量">
+          <el-input-number v-model="editForm.retrieval_top_k" :min="1" :max="20" :step="1" />
+          <span class="form-tip">每次检索返回的相关文档片段数量</span>
+        </el-form-item>
+        <el-form-item label="嵌入模型">
+          <el-select v-model="editForm.embedding_model" placeholder="请选择嵌入模型">
+            <el-option label="默认" value="" />
+            <el-option label="OpenAI" value="openai" />
+            <el-option label="阿里云" value="alibaba" />
+            <el-option label="本地模型" value="local" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="LLM模型">
+          <el-select v-model="editForm.llm_model" placeholder="请选择LLM模型">
+            <el-option label="默认" value="" />
+            <el-option label="OpenAI GPT-4" value="gpt-4" />
+            <el-option label="OpenAI GPT-3.5" value="gpt-3.5-turbo" />
+            <el-option label="阿里云通义千问" value="qwen-turbo" />
+            <el-option label="智谱AI" value="glm-4" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveConfig" :loading="saving">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -109,7 +222,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Upload, Refresh, UploadFilled, Loading, Warning } from '@element-plus/icons-vue'
+import { Upload, Refresh, UploadFilled, Loading, Warning, Edit, FolderAdd } from '@element-plus/icons-vue'
 import { kbAPI } from '@/api'
 
 const route = useRoute()
@@ -121,19 +234,49 @@ const knowledgeBaseDescription = ref('')
 const documents = ref([])
 const loading = ref(false)
 const uploading = ref(false)
+const batchUploading = ref(false)
+const saving = ref(false)
 const showUploadDialog = ref(false)
+const showEditDialog = ref(false)
+const showBatchUploadDialog = ref(false)
 const selectedFile = ref(null)
+const batchFileList = ref([])
+const batchUploadProgress = ref([])
 const showPreviewDialog = ref(false)
 const previewLoading = ref(false)
 const previewContent = ref('')
 const previewDocumentName = ref('')
 const previewDocumentType = ref('')
+const config = ref({
+  chunk_size: 1000,
+  chunk_overlap: 200,
+  retrieval_top_k: 4,
+  embedding_model: '',
+  llm_model: ''
+})
+const editForm = ref({
+  name: '',
+  description: '',
+  chunk_size: 1000,
+  chunk_overlap: 200,
+  retrieval_top_k: 4,
+  embedding_model: '',
+  llm_model: ''
+})
 
 const loadKnowledgeBase = async () => {
   try {
     const knowledgeBase = await kbAPI.getKnowledgeBase(kbId)
     knowledgeBaseName.value = knowledgeBase.name
     knowledgeBaseDescription.value = knowledgeBase.description
+    config.value = {
+      chunk_size: knowledgeBase.chunk_size || 1000,
+      chunk_overlap: knowledgeBase.chunk_overlap || 200,
+      retrieval_top_k: knowledgeBase.retrieval_top_k || 4,
+      embedding_model: knowledgeBase.embedding_model || '',
+      llm_model: knowledgeBase.llm_model || ''
+    }
+    editForm.value = { ...config.value, name: knowledgeBase.name, description: knowledgeBase.description }
   } catch (error) {
     ElMessage.error('加载知识库信息失败')
   }
@@ -154,6 +297,14 @@ const handleFileChange = (file) => {
   selectedFile.value = file.raw
 }
 
+const handleBatchFileChange = (file, fileList) => {
+  batchFileList.value = fileList
+}
+
+const handleFileRemove = (file, fileList) => {
+  batchFileList.value = fileList
+}
+
 const uploadDocument = async () => {
   if (!selectedFile.value) {
     ElMessage.warning('请选择文件')
@@ -171,6 +322,68 @@ const uploadDocument = async () => {
   } finally {
     uploading.value = false
   }
+}
+
+const startBatchUpload = async () => {
+  if (batchFileList.value.length === 0) {
+    ElMessage.warning('请选择要上传的文件')
+    return
+  }
+
+  batchUploading.value = true
+  batchUploadProgress.value = batchFileList.value.map(file => ({
+    name: file.name,
+    status: 'pending',
+    percentage: 0
+  }))
+
+  let successCount = 0
+  let failCount = 0
+
+  for (let i = 0; i < batchFileList.value.length; i++) {
+    const file = batchFileList.value[i]
+    const progressItem = batchUploadProgress.value[i]
+    
+    progressItem.status = 'uploading'
+    progressItem.percentage = 0
+
+    try {
+      await kbAPI.uploadDocument(kbId, file.raw)
+      progressItem.status = 'success'
+      progressItem.percentage = 100
+      successCount++
+    } catch (error) {
+      progressItem.status = 'error'
+      failCount++
+    }
+  }
+
+  batchUploading.value = false
+  loadDocuments()
+
+  if (failCount === 0) {
+    ElMessage.success(`成功上传 ${successCount} 个文件`)
+  } else if (successCount === 0) {
+    ElMessage.error(`上传失败，共 ${failCount} 个文件`)
+  } else {
+    ElMessage.warning(`上传完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+  }
+
+  setTimeout(() => {
+    showBatchUploadDialog.value = false
+    batchFileList.value = []
+    batchUploadProgress.value = []
+  }, 2000)
+}
+
+const cancelBatchUpload = () => {
+  if (batchUploading.value) {
+    ElMessage.warning('正在上传中，请稍后...')
+    return
+  }
+  showBatchUploadDialog.value = false
+  batchFileList.value = []
+  batchUploadProgress.value = []
 }
 
 const deleteDocument = async (docId) => {
@@ -203,6 +416,25 @@ const previewDocument = async (document) => {
 
 const goBack = () => {
   router.push('/knowledge-bases')
+}
+
+const saveConfig = async () => {
+  if (!editForm.value.name) {
+    ElMessage.warning('请输入知识库名称')
+    return
+  }
+
+  saving.value = true
+  try {
+    await kbAPI.updateKnowledgeBase(kbId, editForm.value)
+    ElMessage.success('配置保存成功')
+    showEditDialog.value = false
+    loadKnowledgeBase()
+  } catch (error) {
+    ElMessage.error('配置保存失败')
+  } finally {
+    saving.value = false
+  }
 }
 
 onMounted(() => {
@@ -282,5 +514,51 @@ onMounted(() => {
 
 .preview-error p {
   margin-top: 16px;
+}
+
+.form-tip {
+  margin-left: 12px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.batch-progress {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.progress-item {
+  margin-bottom: 12px;
+  padding: 8px;
+  background: white;
+  border-radius: 4px;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.file-name {
+  font-size: 14px;
+  color: #606266;
+  flex: 1;
+  margin-right: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

@@ -185,3 +185,48 @@ class DocumentVersion(Base):
     file_size = Column(Integer)
     chunk_count = Column(Integer)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Intent(Base):
+    __tablename__ = "intents"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(255), nullable=False, unique=True)
+    description = Column(Text)
+    category = Column(String(100))
+    training_examples = Column(JSON)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Slot(Base):
+    __tablename__ = "slots"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    intent_id = Column(String, ForeignKey("intents.id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    type = Column(String(50))
+    required = Column(Boolean, default=True)
+    prompt_template = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    intent = relationship("Intent", backref="slots")
+
+
+
+
+
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    action = Column(String(255), nullable=False)
+    description = Column(Text)
+    ip_address = Column(String(50))
+    user_agent = Column(String(500))
+    log_metadata = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", backref="activity_logs")

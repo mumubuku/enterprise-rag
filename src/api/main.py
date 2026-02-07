@@ -3,11 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import tempfile
 import os
 import json
 import uuid
+import time
 from src.config.settings import get_settings, ensure_directories
 from src.services.knowledge_base_service import KnowledgeBaseService
 from src.services.auth_service import permission_service
@@ -555,23 +556,80 @@ async def question_answer_stream(
     current_user: User = Depends(get_current_user),
     service: KnowledgeBaseService = Depends(get_kb_service)
 ):
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
+        logger.info(f"Received stream QA request for KB: {qa_request.knowledge_base_id}, question: {qa_request.question[:50]}...")
+        
         rag_engine = service.get_rag_engine(qa_request.knowledge_base_id)
+        logger.info(f"Got RAG engine for KB: {qa_request.knowledge_base_id}")
         
         async def generate():
-            for chunk in rag_engine.stream_query(
-                question=qa_request.question,
-                top_k=qa_request.top_k,
-                conversation_history=qa_request.conversation_history,
-                **qa_request.model_dump(exclude={"question", "knowledge_base_id", "top_k", "conversation_history"}, exclude_unset=True)
-            ):
-                yield f"data: {json.dumps(chunk)}\n\n"
+            logger.info("Starting stream query...")
+            start_time = time.time()
+            full_answer = ""
+            sources = []
+            retrieval_time = 0
+            
+            try:
+                for chunk in rag_engine.stream_query(
+                    question=qa_request.question,
+                    top_k=qa_request.top_k,
+                    conversation_history=qa_request.conversation_history,
+                    **qa_request.model_dump(exclude={"question", "knowledge_base_id", "top_k", "conversation_history"}, exclude_unset=True)
+                ):
+                    logger.info(f"Yielding chunk with keys: {list(chunk.keys())}")
+                    
+                    if "answer" in chunk:
+                        full_answer = chunk["answer"]
+                    if "sources" in chunk:
+                        sources = chunk["sources"]
+                    if "retrieval_time" in chunk:
+                        retrieval_time = chunk["retrieval_time"]
+                    
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+                logger.info("Stream query completed")
+                
+                total_time = time.time() - start_time
+                generation_time = total_time - retrieval_time
+                
+                from src.models.database import QueryLog
+                
+                session = service.db_manager.get_session()
+                try:
+                    query_log = QueryLog(
+                        user_id=current_user.id,
+                        knowledge_base_id=qa_request.knowledge_base_id,
+                        query=qa_request.question,
+                        answer=full_answer,
+                        retrieval_count=len(sources),
+                        retrieval_time=retrieval_time,
+                        generation_time=generation_time,
+                        total_time=total_time,
+                        log_metadata={"sources": sources}
+                    )
+                    session.add(query_log)
+                    session.commit()
+                    logger.info("Query log saved successfully")
+                except Exception as log_e:
+                    logger.error(f"Error saving query log: {str(log_e)}")
+                    session.rollback()
+                finally:
+                    session.close()
+                    
+            except Exception as stream_e:
+                logger.error(f"Error in stream query: {str(stream_e)}")
+                raise
         
+        logger.info("Returning streaming response")
         return StreamingResponse(
             generate(),
             media_type="text/event-stream"
         )
     except Exception as e:
+        logger.error(f"Error in question_answer_stream: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -988,6 +1046,29 @@ async def get_query_log_stats(
             session.close()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_default_rag_engine():
+    """获取默认RAG引擎，优先使用名为'default'的知识库，如果没有则使用第一个可用的知识库"""
+    try:
+        # 尝试获取名为'default'的知识库
+        return kb_service.get_rag_engine("default")
+    except ValueError:
+        # 如果名为'default'的知识库不存在，则使用第一个可用的知识库
+        kbs = kb_service.list_knowledge_bases()
+        if kbs:
+            return kb_service.get_rag_engine(kbs[0].id)
+        else:
+            # 如果没有任何知识库，创建一个默认知识库
+            default_kb = kb_service.create_knowledge_base(
+                name="default",
+                description="默认知识库，用于客户服务中心",
+                embedding_model="alibaba",
+                llm_model="alibaba"
+            )
+            return kb_service.get_rag_engine(default_kb.id)
+
+
 
 
 if __name__ == "__main__":

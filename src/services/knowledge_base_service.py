@@ -6,7 +6,7 @@ from src.core.document_processor import DocumentProcessor
 from src.core.vector_store import BaseVectorStore, get_vector_store
 from src.core.embeddings import BaseEmbeddings, get_embedding_service
 from src.core.llm import BaseLLM, get_llm
-from src.core.rag_engine import RAGEngine, HybridRAGEngine
+from src.core.rag_engine import RAGEngine
 from src.config.settings import get_settings
 import os
 import shutil
@@ -139,7 +139,8 @@ class KnowledgeBaseService:
 
             processor = DocumentProcessor(
                 chunk_size=kb.chunk_size,
-                chunk_overlap=kb.chunk_overlap
+                chunk_overlap=kb.chunk_overlap,
+                enable_multimodal=settings.enable_multimodal
             )
 
             chunks = processor.process_file(file_path, original_filename, additional_metadata)
@@ -205,7 +206,8 @@ class KnowledgeBaseService:
 
             processor = DocumentProcessor(
                 chunk_size=kb.chunk_size,
-                chunk_overlap=kb.chunk_overlap
+                chunk_overlap=kb.chunk_overlap,
+                enable_multimodal=settings.enable_multimodal
             )
 
             chunks = processor.process_directory(directory_path, additional_metadata)
@@ -333,12 +335,15 @@ class KnowledgeBaseService:
             llm_provider = kb.llm_model or "alibaba"
             llm = get_llm(llm_provider)
 
-            if settings.rerank_enabled:
-                self._rag_engines[kb_id] = HybridRAGEngine(
+            if settings.use_rerank:
+                self._rag_engines[kb_id] = RAGEngine(
                     vector_store=vector_store,
                     llm=llm,
                     embedding_service=embedding_service,
+                    use_hybrid_search=settings.use_hybrid_search,
                     use_rerank=True,
+                    use_query_rewrite=settings.use_query_rewrite,
+                    num_paths=settings.num_paths,
                     db_manager=self.db_manager
                 )
             else:
@@ -346,6 +351,10 @@ class KnowledgeBaseService:
                     vector_store=vector_store,
                     llm=llm,
                     embedding_service=embedding_service,
+                    use_hybrid_search=settings.use_hybrid_search,
+                    use_rerank=False,
+                    use_query_rewrite=False,
+                    num_paths=settings.num_paths,
                     db_manager=self.db_manager
                 )
 

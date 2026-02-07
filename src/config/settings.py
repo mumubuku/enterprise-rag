@@ -69,12 +69,28 @@ class Settings(BaseSettings):
     chunk_size: int = 1000
     chunk_overlap: int = 200
     max_file_size: int = 104857600
-    supported_formats: str = "pdf,docx,doc,txt,md,html,xlsx,pptx,ppt,csv"
+    supported_formats: str = "pdf,docx,doc,txt,md,html,xlsx,pptx,ppt,csv,png,jpg,jpeg,gif,bmp,mp4,avi,mov,mkv,mp3,wav,m4a,flac"
+    enable_multimodal: bool = True
+    use_ocr: bool = True
+    use_table_extraction: bool = True
+    use_video_subtitle: bool = True
+    use_audio_transcription: bool = True
+    use_aliyun_services: bool = False
+    use_qwen_model: bool = True
+    aliyun_access_key_id: Optional[str] = None
+    aliyun_access_key_secret: Optional[str] = None
+    aliyun_region_id: str = "cn-hangzhou"
+    qwen_api_key: Optional[str] = None
 
     retrieval_top_k: int = 4
     retrieval_score_threshold: float = 0.7
-    rerank_enabled: bool = False
-    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    use_hybrid_search: bool = True
+    use_rerank: bool = False
+    use_query_rewrite: bool = False
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    num_paths: int = 3
+    bm25_weight: float = 0.3
+    vector_weight: float = 0.7
     context_window_size: int = 4000
 
     enable_cache: bool = True

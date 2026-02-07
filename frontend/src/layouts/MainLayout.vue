@@ -26,6 +26,8 @@
           <span>智能问答</span>
         </el-menu-item>
         
+
+        
         <el-sub-menu index="admin" v-if="authStore.isSuperuser">
           <template #title>
             <el-icon><Setting /></el-icon>
@@ -106,6 +108,7 @@ import {
   Odometer,
   FolderOpened,
   ChatDotRound,
+  Service,
   Setting,
   User,
   UserFilled,

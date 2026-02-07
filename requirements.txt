@@ -25,6 +25,7 @@ pypdf>=3.17.4
 unstructured>=0.11.0
 pytesseract>=0.3.10
 pillow>=10.1.0
+msoffcrypto-tool>=6.0.0
 
 # LLM providers
 openai>=1.10.0

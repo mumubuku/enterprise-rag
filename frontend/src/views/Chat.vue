@@ -55,7 +55,7 @@
                   <span v-if="source.pages.length > 0" class="source-pages">
                     第{{ formatPages(source.pages) }}页
                   </span>
-                  <span class="source-score">相似度: {{ (source.maxScore * 100).toFixed(1) }}%</span>
+                  <span class="source-score">相似度: {{ Math.min(100, source.maxScore * 100).toFixed(1) }}%</span>
                 </div>
               </div>
             </div>

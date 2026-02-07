@@ -229,6 +229,7 @@ class QARequest(BaseModel):
     question: str = Field(..., min_length=1)
     knowledge_base_id: str
     top_k: Optional[int] = Field(default=4, ge=1, le=20)
+    score_threshold: Optional[float] = Field(default=0.0, ge=0.0, le=1.0)
     llm_provider: Optional[LLMProvider] = LLMProvider.OPENAI
     llm_model: Optional[str] = None
     temperature: Optional[float] = Field(default=0.1, ge=0.0, le=2.0)

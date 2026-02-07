@@ -15,6 +15,7 @@ from typing import List, Optional, Dict, Any
 import os
 import hashlib
 from datetime import datetime
+from src.core.multimodal_processor import MultiModalDocumentProcessor
 
 
 class DocumentProcessor:
@@ -22,10 +23,18 @@ class DocumentProcessor:
         self,
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
-        separators: Optional[List[str]] = None
+        separators: Optional[List[str]] = None,
+        enable_multimodal: bool = True,
+        use_aliyun_services: bool = None,
+        use_qwen_model: bool = None,
+        aliyun_access_key_id: str = None,
+        aliyun_access_key_secret: str = None,
+        aliyun_region_id: str = None,
+        qwen_api_key: str = None
     ):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.enable_multimodal = enable_multimodal
         
         if separators is None:
             separators = ["\n\n", "\n", "。", "！", "？", ".", "!", "?", " ", ""]
@@ -36,6 +45,28 @@ class DocumentProcessor:
             length_function=len,
             separators=separators
         )
+        
+        if enable_multimodal:
+            from src.config.settings import get_settings
+            settings = get_settings()
+            
+            use_aliyun = use_aliyun_services if use_aliyun_services is not None else settings.use_aliyun_services
+            use_qwen = use_qwen_model if use_qwen_model is not None else settings.use_qwen_model
+            ak_id = aliyun_access_key_id or settings.alibaba_cloud_access_key_id
+            ak_secret = aliyun_access_key_secret or settings.alibaba_cloud_access_key_secret
+            region = aliyun_region_id or settings.alibaba_cloud_region_id
+            qwen_key = qwen_api_key or settings.qwen_api_key or settings.dashscope_api_key
+            
+            self.multimodal_processor = MultiModalDocumentProcessor(
+                use_aliyun_services=use_aliyun,
+                use_qwen_model=use_qwen,
+                aliyun_access_key_id=ak_id,
+                aliyun_access_key_secret=ak_secret,
+                aliyun_region_id=region,
+                qwen_api_key=qwen_key
+            )
+        else:
+            self.multimodal_processor = None
         
         self.supported_formats = {
             ".pdf": self._load_pdf,
@@ -51,6 +82,24 @@ class DocumentProcessor:
             ".ppt": self._load_pptx,
             ".csv": self._load_csv,
         }
+        
+        if enable_multimodal:
+            self.multimodal_formats = {
+                ".png": self._load_multimodal,
+                ".jpg": self._load_multimodal,
+                ".jpeg": self._load_multimodal,
+                ".gif": self._load_multimodal,
+                ".bmp": self._load_multimodal,
+                ".mp4": self._load_multimodal,
+                ".avi": self._load_multimodal,
+                ".mov": self._load_multimodal,
+                ".mkv": self._load_multimodal,
+                ".mp3": self._load_multimodal,
+                ".wav": self._load_multimodal,
+                ".m4a": self._load_multimodal,
+                ".flac": self._load_multimodal,
+            }
+            self.supported_formats.update(self.multimodal_formats)
 
     def _load_pdf(self, file_path: str) -> List[Document]:
         try:
@@ -87,6 +136,37 @@ class DocumentProcessor:
     def _load_csv(self, file_path: str) -> List[Document]:
         loader = UnstructuredCSVLoader(file_path)
         return loader.load()
+    
+    def _load_multimodal(self, file_path: str) -> List[Document]:
+        """加载多模态文件"""
+        if not self.multimodal_processor:
+            return []
+        
+        try:
+            chunks = self.multimodal_processor.process_and_chunk(
+                file_path,
+                self.chunk_size,
+                self.chunk_overlap
+            )
+            
+            documents = []
+            for chunk in chunks:
+                metadata = {
+                    "source": file_path,
+                    "file_type": os.path.splitext(file_path)[1],
+                    "chunk_type": chunk.get("metadata", {}).get("type", "text")
+                }
+                metadata.update(chunk.get("metadata", {}))
+                
+                documents.append(Document(
+                    page_content=chunk["content"],
+                    metadata=metadata
+                ))
+            
+            return documents
+        except Exception as e:
+            print(f"多模态文件处理失败: {e}")
+            return []
 
     def load_document(self, file_path: str) -> Optional[List[Document]]:
         file_extension = os.path.splitext(file_path)[1].lower()

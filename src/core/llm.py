@@ -85,13 +85,21 @@ class AlibabaLLM(BaseLLM):
 
     def generate(self, messages: List[BaseMessage], **kwargs) -> str:
         dashscope_messages = self._convert_messages(messages)
-        response = dashscope.Generation.call(
-            model=self.model,
-            messages=dashscope_messages,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            **kwargs
-        )
+        
+        # 合并参数，避免重复
+        params = {
+            'model': self.model,
+            'messages': dashscope_messages,
+            'temperature': kwargs.get('temperature', self.temperature),
+            'max_tokens': kwargs.get('max_tokens', self.max_tokens)
+        }
+        
+        # 添加其他参数
+        for key, value in kwargs.items():
+            if key not in ['temperature', 'max_tokens']:
+                params[key] = value
+        
+        response = dashscope.Generation.call(**params)
         
         if response.status_code == 200:
             if response.output.choices:
