@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from src.config.settings import get_settings
 import dashscope
 import zhipuai
+import erniebot
 
 settings = get_settings()
 
@@ -196,6 +197,69 @@ class ZhipuLLM(BaseLLM):
                 yield chunk['choices'][0]['delta'].get('content', '')
 
 
+class ErnieLLM(BaseLLM):
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        api_key: Optional[str] = None,
+        secret_key: Optional[str] = None
+    ):
+        self.model = model or settings.erniebot_model
+        self.temperature = temperature or settings.openai_temperature
+        self.max_tokens = max_tokens or settings.openai_max_tokens
+        self.api_key = api_key or settings.erniebot_api_key
+        self.secret_key = secret_key or settings.erniebot_secret_key
+        
+        if not self.api_key or not self.secret_key:
+            raise ValueError("ErnieBot API key and secret key are required")
+        
+        erniebot.api_type = "aistudio"
+        erniebot.access_token = self.api_key
+
+    def _convert_messages(self, messages: List[BaseMessage]) -> List[Dict[str, str]]:
+        converted = []
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                converted.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, AIMessage):
+                converted.append({"role": "assistant", "content": msg.content})
+            elif isinstance(msg, SystemMessage):
+                converted.append({"role": "system", "content": msg.content})
+        return converted
+
+    def generate(self, messages: List[BaseMessage], **kwargs) -> str:
+        ernie_messages = self._convert_messages(messages)
+        response = erniebot.ChatCompletion.create(
+            model=self.model,
+            messages=ernie_messages,
+            temperature=self.temperature,
+            max_output_tokens=self.max_tokens,
+            **kwargs
+        )
+        
+        if response and 'result' in response:
+            return response['result']
+        else:
+            raise Exception(f"Failed to call ErnieBot LLM: {response}")
+
+    def stream(self, messages: List[BaseMessage], **kwargs) -> Iterator[str]:
+        ernie_messages = self._convert_messages(messages)
+        response = erniebot.ChatCompletion.create(
+            model=self.model,
+            messages=ernie_messages,
+            temperature=self.temperature,
+            max_output_tokens=self.max_tokens,
+            stream=True,
+            **kwargs
+        )
+        
+        for chunk in response:
+            if chunk and 'result' in chunk:
+                yield chunk['result']
+
+
 class LLMFactory:
     @staticmethod
     def create(
@@ -225,6 +289,14 @@ class LLMFactory:
         
         elif provider == "zhipuai" or provider == "zhipu":
             return ZhipuLLM(
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs
+            )
+        
+        elif provider == "ernie" or provider == "erniebot":
+            return ErnieLLM(
                 model=model,
                 temperature=temperature,
                 max_tokens=max_tokens,

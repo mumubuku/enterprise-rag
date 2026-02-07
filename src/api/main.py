@@ -9,6 +9,7 @@ import os
 import json
 import uuid
 import time
+from contextlib import asynccontextmanager
 from src.config.settings import get_settings, ensure_directories
 from src.services.knowledge_base_service import KnowledgeBaseService
 from src.services.auth_service import permission_service
@@ -48,10 +49,25 @@ from src.api.auth import router as auth_router
 settings = get_settings()
 ensure_directories(settings)
 
+kb_service = KnowledgeBaseService()
+
+if settings.file_storage_type == "local":
+    os.makedirs(settings.upload_dir, exist_ok=True)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    startup_event()
+    yield
+    shutdown_event()
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    debug=settings.debug
+    debug=settings.debug,
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -64,14 +80,10 @@ app.add_middleware(
 
 app.include_router(auth_router)
 
-kb_service = KnowledgeBaseService()
-
 if settings.file_storage_type == "local":
-    os.makedirs(settings.upload_dir, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 
-@app.on_event("startup")
 async def startup_event():
     """应用启动时初始化数据库"""
     try:
@@ -108,6 +120,11 @@ async def startup_event():
             session.close()
     except Exception as e:
         print(f"⚠️  数据库初始化警告: {e}")
+
+
+async def shutdown_event():
+    """应用关闭时清理资源"""
+    print("👋 应用正在关闭...")
 
 
 def get_kb_service():
